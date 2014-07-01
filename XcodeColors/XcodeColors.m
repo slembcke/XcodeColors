@@ -115,34 +115,26 @@ void ApplyANSIColors(NSTextStorage *textStorage, NSRange textStorageRange, NSStr
 			
 			BOOL resetFg = fg && [component hasPrefix:@"fg;"];
 			BOOL resetBg = bg && [component hasPrefix:@"bg;"];
-			
+
 			if (reset)
 			{
-				// Reset attributes
+                // reset sequence length (";")
+                colorCodeSeqLength = 1;
+
+                // Reset attributes
 				[attrs removeObjectForKey:NSForegroundColorAttributeName];
 				[attrs removeObjectForKey:NSBackgroundColorAttributeName];
-				
-				// Mark the range of the sequence (escape sequence + reset color sequence).
-				NSRange seqRange = (NSRange){
-					.location = componentRange.location - [escapeSeq length],
-					.length = 1 + [escapeSeq length],
-				};
-				[seqRanges addObject:[NSValue valueWithRange:seqRange]];
 			}
 			else if (resetFg || resetBg)
 			{
+				// reset color sequence length (@"xx;")
+                colorCodeSeqLength = 3;
+
 				// Reset attributes
 				if (resetFg)
 					[attrs removeObjectForKey:NSForegroundColorAttributeName];
 				else
 					[attrs removeObjectForKey:NSBackgroundColorAttributeName];
-				
-				// Mark the range of the sequence (escape sequence + reset color sequence).
-				NSRange seqRange = (NSRange){
-					.location = componentRange.location - [escapeSeq length],
-					.length = 3 + [escapeSeq length],
-				};
-				[seqRanges addObject:[NSValue valueWithRange:seqRange]];
 			}
 			else if (fg || bg)
 			{
@@ -222,30 +214,23 @@ void ApplyANSIColors(NSTextStorage *textStorage, NSRange textStorageRange, NSStr
 					{
 						[attrs setObject:color forKey:NSBackgroundColorAttributeName];
 					}
-					
-					//NSString *realString = [component substringFromIndex:colorCodeSeqLength];
-					
-					// Mark the range of the entire sequence (escape sequence + color code sequence).
-					NSRange seqRange = (NSRange){
-						.location = componentRange.location - [escapeSeq length],
-						.length = colorCodeSeqLength + [escapeSeq length],
-					};
-					[seqRanges addObject:[NSValue valueWithRange:seqRange]];
-				}
+                }
 				else
 				{
 					// Wasn't able to parse a color code
-					
-					[attrs removeObjectForKey:NSForegroundColorAttributeName];
-					[attrs removeObjectForKey:NSBackgroundColorAttributeName];
-					
-					NSRange seqRange = (NSRange){
-						.location = componentRange.location - [escapeSeq length],
-						.length = [escapeSeq length],
-					};
-					[seqRanges addObject:[NSValue valueWithRange:seqRange]];
+                    colorCodeSeqLength = 0;
+
+                    // Reset attributes
+                    [attrs removeObjectForKey:NSForegroundColorAttributeName];
+                    [attrs removeObjectForKey:NSBackgroundColorAttributeName];
 				}
 			}
+
+            NSRange seqRange = (NSRange){
+                .location = componentRange.location - [escapeSeq length],
+                .length = colorCodeSeqLength + [escapeSeq length],
+            };
+            [seqRanges addObject:[NSValue valueWithRange:seqRange]];
 		}
 		
 		componentRange.length = [component length];
