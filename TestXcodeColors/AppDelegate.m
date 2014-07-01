@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import "XcodeColors.h"
 
 // How to apply color formatting to your log statements:
 // 
@@ -53,6 +54,57 @@
 	NSLog(XCODE_COLORS_ESCAPE @"fg209,57,168;" @"You can supply your own RGB values!" XCODE_COLORS_RESET);
 	
 	LogBlue(@"Blue text via macro");
+
+  //  [self testANSIColors];
+}
+
+- (void)testANSIColors {
+
+    NSLog(@"\n=======Testing ANSI colors=======");
+
+    //These correspond to the TRShellColor values
+    NSArray *colorNames = @[@"Black", @"Red", @"Green", @"Yellow", @"Blue", @"Magenta", @"Cyan", @"White"];
+
+    TRShellAttribute baseAttributes[] = {TRShellAttributeForegroundRegular, TRShellAttributeForegroundLight, TRShellAttributeBackgroundRegular, TRShellAttributeBackgroundLight};
+
+    TRShellColor colorCode;
+    for (NSInteger i = 0; i < 4; i++) {
+
+        TRShellAttribute baseAttribute = baseAttributes[i];
+
+        // Test without reset
+        colorCode = TRShellColorBlack;
+        for (NSString *colorName in colorNames) {
+
+            NSLog(@"%@%lum%@", XCODE_COLORS_ESCAPE, baseAttribute + colorCode++, colorName);
+        }
+
+        NSLog(@"No Attribute");
+
+
+        //Test with reset
+        colorCode = TRShellColorBlack;
+        for (NSString *colorName in colorNames) {
+
+            NSLog(@"%@%lum%@%@", XCODE_COLORS_ESCAPE, baseAttribute + colorCode++, colorName, XCODE_COLORS_RESET);
+        }
+
+        NSLog(@"No Attribute");
+    }
+
+    // Test setting both background and foreground
+    colorCode = TRShellColorBlack;
+    NSInteger count = 0;
+
+    for (NSString *colorName in colorNames) {
+
+        TRShellColor bgColorCode = [colorNames count] - (1 + count++);
+        NSString *bgColorName = colorNames[bgColorCode];
+        NSLog(@"%@%lu;%lum%@-bg%@%@", XCODE_COLORS_ESCAPE, TRShellAttributeForegroundRegular + colorCode, TRShellAttributeBackgroundRegular + bgColorCode, colorName, bgColorName,XCODE_COLORS_RESET);
+        colorCode++;
+    }
+    
+    NSLog(@"No Attribute");
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication
