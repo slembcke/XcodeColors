@@ -111,37 +111,30 @@ void ApplyANSIColors(NSTextStorage *textStorage, NSRange textStorageRange, NSStr
 			BOOL reset = !stop && (stop = [component hasPrefix:@";"]);
 			BOOL fg    = !stop && (stop = [component hasPrefix:@"fg"]);
 			BOOL bg    = !stop && (stop = [component hasPrefix:@"bg"]);
-			
+            BOOL ansi    = !stop;
+
 			BOOL resetFg = fg && [component hasPrefix:@"fg;"];
 			BOOL resetBg = bg && [component hasPrefix:@"bg;"];
-			
+
 			if (reset)
 			{
-				// Reset attributes
+                // reset sequence length (";")
+                colorCodeSeqLength = 1;
+
+                // Reset attributes
 				[attrs removeObjectForKey:NSForegroundColorAttributeName];
 				[attrs removeObjectForKey:NSBackgroundColorAttributeName];
-				
-				// Mark the range of the sequence (escape sequence + reset color sequence).
-				NSRange seqRange = (NSRange){
-					.location = componentRange.location - [escapeSeq length],
-					.length = 1 + [escapeSeq length],
-				};
-				[seqRanges addObject:[NSValue valueWithRange:seqRange]];
 			}
 			else if (resetFg || resetBg)
 			{
+				// reset color sequence length (@"xx;")
+                colorCodeSeqLength = 3;
+
 				// Reset attributes
 				if (resetFg)
 					[attrs removeObjectForKey:NSForegroundColorAttributeName];
 				else
 					[attrs removeObjectForKey:NSBackgroundColorAttributeName];
-				
-				// Mark the range of the sequence (escape sequence + reset color sequence).
-				NSRange seqRange = (NSRange){
-					.location = componentRange.location - [escapeSeq length],
-					.length = 3 + [escapeSeq length],
-				};
-				[seqRanges addObject:[NSValue valueWithRange:seqRange]];
 			}
 			else if (fg || bg)
 			{
@@ -221,30 +214,152 @@ void ApplyANSIColors(NSTextStorage *textStorage, NSRange textStorageRange, NSStr
 					{
 						[attrs setObject:color forKey:NSBackgroundColorAttributeName];
 					}
-					
-					//NSString *realString = [component substringFromIndex:colorCodeSeqLength];
-					
-					// Mark the range of the entire sequence (escape sequence + color code sequence).
-					NSRange seqRange = (NSRange){
-						.location = componentRange.location - [escapeSeq length],
-						.length = colorCodeSeqLength + [escapeSeq length],
-					};
-					[seqRanges addObject:[NSValue valueWithRange:seqRange]];
-				}
+                }
 				else
 				{
 					// Wasn't able to parse a color code
-					
-					[attrs removeObjectForKey:NSForegroundColorAttributeName];
-					[attrs removeObjectForKey:NSBackgroundColorAttributeName];
-					
-					NSRange seqRange = (NSRange){
-						.location = componentRange.location - [escapeSeq length],
-						.length = [escapeSeq length],
-					};
-					[seqRanges addObject:[NSValue valueWithRange:seqRange]];
+                    colorCodeSeqLength = 0;
+
+                    // Reset attributes
+                    [attrs removeObjectForKey:NSForegroundColorAttributeName];
+                    [attrs removeObjectForKey:NSBackgroundColorAttributeName];
 				}
 			}
+            else if (ansi) {
+
+                NSUInteger endIndex = [component rangeOfString:@"m"].location;
+
+                if (endIndex == NSNotFound) {
+
+					// Wasn't able to parse a color code
+                    colorCodeSeqLength = 0;
+                }
+
+                if (endIndex == 0) {
+
+					// empty color sequence ("m")
+                    colorCodeSeqLength = 1;
+                }
+                else {
+
+                    colorCodeSeqLength = endIndex + 1;
+
+                    NSString *attrString = [component substringWithRange:NSMakeRange(0, endIndex)];
+
+                    NSString * const kTRShellAttributesSeparator = @";";
+
+                    NSArray *attributes = [attrString componentsSeparatedByString:kTRShellAttributesSeparator];
+
+                    NSColor *foregroundColor = nil, *backgroundColor = nil;
+                    BOOL clearForeground = NO, clearBackground = NO;
+
+                    for (NSString *attributeStr in attributes) {
+
+                        TRShellAttribute attribute = [attributeStr integerValue];
+
+                        switch (attribute) {
+
+                            /* reset cases */
+
+                            case TRShellAttributeResetAll:
+                                foregroundColor = backgroundColor = nil;
+                                clearForeground = clearBackground = YES;
+                                break;
+
+                            case TRShellAttributeForegroundDefault:
+                                foregroundColor = nil;
+                                clearForeground = YES;
+                                break;
+
+                            case TRShellAttributeBackgroundDefault:
+                                backgroundColor = nil;
+                                clearBackground = YES;
+                                break;
+
+                            /* foreground color cases */
+
+                            case TRShellAttributeForegroundBlack:
+                            case TRShellAttributeForegroundRed:
+                            case TRShellAttributeForegroundGreen:
+                            case TRShellAttributeForegroundYellow:
+                            case TRShellAttributeForegroundBlue:
+                            case TRShellAttributeForegroundMagenta:
+                            case TRShellAttributeForegroundCyan:
+                            case TRShellAttributeForegroundLightGray:
+                            {
+                                TRShellColor colorCode = attribute - TRShellAttributeForegroundRegular;
+                                foregroundColor = colorForShellColor(colorCode, NO);
+                                break;
+                            }
+
+                            case TRShellAttributeForegroundDarkGray:
+                            case TRShellAttributeForegroundLightRed:
+                            case TRShellAttributeForegroundLightGreen:
+                            case TRShellAttributeForegroundLightYellow:
+                            case TRShellAttributeForegroundLightBlue:
+                            case TRShellAttributeForegroundLightMagenta:
+                            case TRShellAttributeForegroundLightCyan:
+                            case TRShellAttributeForegroundWhite:
+                            {
+                                TRShellColor colorCode = attribute - TRShellAttributeForegroundLight;
+                                foregroundColor = colorForShellColor(colorCode, YES);
+                                break;
+                            }
+
+                            case TRShellAttributeBackgroundBlack:
+                            case TRShellAttributeBackgroundRed:
+                            case TRShellAttributeBackgroundGreen:
+                            case TRShellAttributeBackgroundYellow:
+                            case TRShellAttributeBackgroundBlue:
+                            case TRShellAttributeBackgroundMagenta:
+                            case TRShellAttributeBackgroundCyan:
+                            case TRShellAttributeBackgroundLightGray:
+                            {
+                                TRShellColor colorCode = attribute - TRShellAttributeBackgroundRegular;
+                                backgroundColor = colorForShellColor(colorCode, NO);
+                                break;
+                            }
+
+                            case TRShellAttributeBackgroundDarkGray:
+                            case TRShellAttributeBackgroundLightRed:
+                            case TRShellAttributeBackgroundLightGreen:
+                            case TRShellAttributeBackgroundLightYellow:
+                            case TRShellAttributeBackgroundLightBlue:
+                            case TRShellAttributeBackgroundLightMagenta:
+                            case TRShellAttributeBackgroundLightCyan:
+                            case TRShellAttributeBackgroundWhite:
+                            {
+                                TRShellColor colorCode = attribute - TRShellAttributeBackgroundLight;
+                                backgroundColor = colorForShellColor(colorCode, YES);
+                                break;
+                            }
+
+                            default:
+                                break;
+                        }
+                        
+                    }
+
+                    if (clearForeground) {
+                        [attrs removeObjectForKey:NSForegroundColorAttributeName];
+                    }
+                    if (clearBackground) {
+                        [attrs removeObjectForKey:NSBackgroundColorAttributeName];
+                    }
+                    if (foregroundColor) {
+                        [attrs setObject:foregroundColor forKey:NSForegroundColorAttributeName];
+                    }
+                    if (backgroundColor) {
+                        [attrs setObject:backgroundColor forKey:NSBackgroundColorAttributeName];
+                    }
+                }
+            }
+
+            NSRange seqRange = (NSRange){
+                .location = componentRange.location - [escapeSeq length],
+                .length = colorCodeSeqLength + [escapeSeq length],
+            };
+            [seqRanges addObject:[NSValue valueWithRange:seqRange]];
 		}
 		
 		componentRange.length = [component length];
@@ -272,6 +387,94 @@ void ApplyANSIColors(NSTextStorage *textStorage, NSRange textStorageRange, NSStr
 			[textStorage addAttributes:clearAttrs range:seqRange];
 		}
 	}
+}
+
+NSColor *colorForShellColor(TRShellColor colorCode, BOOL light) {
+
+    // These colors are taken from the Terminal.app default preferences.
+
+    switch (colorCode) {
+
+        case TRShellColorBlack:
+
+            if (!light) {
+                return [NSColor blackColor];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.326 green:0.326 blue:0.326 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorRed:
+
+            if (!light) {
+                return [NSColor colorWithDeviceRed:0.522 green:0.000 blue:0.009 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithDeviceRed:0.863 green:0.000 blue:0.021 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorGreen:
+
+            if (!light) {
+                return [NSColor colorWithCalibratedRed:0.079 green:0.602 blue:0.009 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.110 green:0.839 blue:0.017 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorYellow:
+
+            if (!light) {
+                return [NSColor colorWithCalibratedRed:0.530 green:0.540 blue:0.017 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.877 green:0.892 blue:0.036 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorBlue:
+
+            if (!light) {
+                return [NSColor colorWithCalibratedRed:0.000 green:0.000 blue:0.639 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.000 green:0.000 blue:0.998 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorMagenta:
+
+            if (!light) {
+                return [NSColor colorWithCalibratedRed:0.630 green:0.000 blue:0.640 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.862 green:0.000 blue:0.875 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorCyan:
+
+            if (!light) {
+                return [NSColor colorWithCalibratedRed:0.075 green:0.589 blue:0.639 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.113 green:0.885 blue:0.875 alpha:1.000];
+            }
+            break;
+
+        case TRShellColorWhite:
+
+            if (!light) {
+                return [NSColor colorWithCalibratedRed:0.697 green:0.697 blue:0.697 alpha:1.000];
+            }
+            else {
+                return [NSColor colorWithCalibratedRed:0.876 green:0.876 blue:0.876 alpha:1.000];
+            }
+            break;
+    }
 }
 
 - (void)xc_fixAttributesInRange:(NSRange)aRange
